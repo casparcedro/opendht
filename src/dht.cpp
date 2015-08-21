@@ -2691,7 +2691,7 @@ Dht::send(const char *buf, size_t len, int flags, const sockaddr *sa, socklen_t 
         DHT_DEBUG("Attempting to send to blacklisted node.");
         return -1;
     }
-    std::cout << "trying to send " << salen << " bytes" << std::endl;
+    std::cout << "trying to send " << len << " bytes" << std::endl;
 
     int s;
     if (sa->sa_family == AF_INET)
