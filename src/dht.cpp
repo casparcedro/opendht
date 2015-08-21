@@ -896,7 +896,7 @@ Dht::searchStep(Search& sr)
                     continue;
                 if (n.getListenTime() <= now) {
                     //DHT_DEBUG("Sending listen to %s (%s).", print_addr(n.node->ss, n.node->sslen).c_str(), n.node->id.toString().c_str());
-                    //std::cout << "Sending listen to " << print_addr(n.node->ss, n.node->sslen) << " (" << n.node->id << ")" << std::endl;
+                    std::cout << "Sending listen to " << n.node->id << " " << print_addr(n.node->ss, n.node->sslen) << std::endl;
                     sendListen((sockaddr*)&n.node->ss, n.node->sslen, TransId {TransPrefix::LISTEN, sr.tid}, sr.id, n.token, n.node->reply_time >= now - UDP_REPLY_TIME);
                     n.pending = true;
                     n.listenStatus.request_time = now;
@@ -927,7 +927,7 @@ Dht::searchStep(Search& sr)
                 auto at = n.getAnnounceTime(a_status, type);
                 if ( at <= now ) {
                     //DHT_DEBUG("Sending announce_value to %s (%s).", print_addr(n.node->ss, n.node->sslen).c_str(), n.node->id.toString().c_str());
-                    //std::cout << "Sending announce_value to " << print_addr(n.node->ss, n.node->sslen) << " (" << n.node->id << ")" << std::endl;
+                    std::cout << "Sending announce_value to " << n.node->id << " " << print_addr(n.node->ss, n.node->sslen) << std::endl;
                     sendAnnounceValue((sockaddr*)&n.node->ss, n.node->sslen,
                                        TransId {TransPrefix::ANNOUNCE_VALUES, sr.tid}, sr.id, *a.value,
                                        n.token, n.node->reply_time >= now - UDP_REPLY_TIME);
@@ -2691,6 +2691,7 @@ Dht::send(const char *buf, size_t len, int flags, const sockaddr *sa, socklen_t 
         DHT_DEBUG("Attempting to send to blacklisted node.");
         return -1;
     }
+    std::cout << "trying to send " << salen << " bytes" << std::endl;
 
     int s;
     if (sa->sa_family == AF_INET)
