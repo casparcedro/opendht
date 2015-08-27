@@ -114,6 +114,13 @@ private:
  */
 inline void NOLOG(char const*, va_list) {}
 
+struct Log {
+    LogMethod d {NOLOG};
+    LogMethod w {NOLOG};
+    LogMethod e {NOLOG};
+};
+
+static Log log;
 
 struct Value;
 
