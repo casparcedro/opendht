@@ -2121,7 +2121,7 @@ Dht::neighbourhoodMaintenance(RoutingTable& list)
     want_t want = dht_socket >= 0 && dht_socket6 >= 0 ? (WANT4 | WANT6) : -1;
     auto n = q->randomNode();
     if (n) {
-        DHT_DEBUG("Sending find_node for%s neighborhood maintenance.", q->af == AF_INET6 ? " IPv6" : "");
+        DHT_DEBUG("[find %s IPv%c] sending find for neighborhood maintenance.", id.toString().c_str(), q->af == AF_INET6 ? '6' : '4');
         sendFindNode((sockaddr*)&n->ss, n->sslen,
                        TransId {TransPrefix::FIND_NODE}, id, want,
                        n->reply_time >= now - UDP_REPLY_TIME);
@@ -2173,7 +2173,7 @@ Dht::bucketMaintenance(RoutingTable& list)
                         want = WANT4 | WANT6;
                 }
 
-                DHT_DEBUG("Sending find_node for%s bucket maintenance.", q->af == AF_INET6 ? " IPv6" : "");
+                DHT_DEBUG("[find %s IPv%c] sending for bucket maintenance.", id.toString().c_str(), q->af == AF_INET6 ? '6' : '4');
                 sendFindNode((sockaddr*)&n->ss, n->sslen,
                                TransId {TransPrefix::FIND_NODE}, id, want,
                                n->reply_time >= now - UDP_REPLY_TIME);
@@ -2250,9 +2250,9 @@ Dht::processMessage(const uint8_t *buf, size_t buflen, const sockaddr *from, soc
                     break;
                 }
             }
-            DHT_WARN("Token flush for node %s (%d searches affected)",msg.id.toString().c_str(), cleared);
+            DHT_WARN("[node %s %s] token flush (%d searches affected)", msg.id.toString().c_str(), print_addr(from, fromlen).c_str(), cleared);
         } else {
-            DHT_WARN("Received unknown error message %u from %s:", msg.error_code,msg.id.toString().c_str());
+            DHT_WARN("[node %s %s] received unknown error message %u", msg.id.toString().c_str(), print_addr(from, fromlen).c_str(), msg.error_code);
             DHT_WARN.logPrintable(buf, buflen);
         }
         break;
@@ -2267,7 +2267,7 @@ Dht::processMessage(const uint8_t *buf, size_t buflen, const sockaddr *from, soc
             return;
         }
         if (msg.tid.matches(TransPrefix::PING)) {
-            DHT_DEBUG("Pong!");
+            DHT_DEBUG("[node %s %s] Pong!", msg.id.toString().c_str(), print_addr(from, fromlen).c_str());
             newNode(msg.id, from, fromlen, 2, (sockaddr*)&msg.addr.first, msg.addr.second);
         } else if (msg.tid.matches(TransPrefix::FIND_NODE) or msg.tid.matches(TransPrefix::GET_VALUES)) {
             bool gp = false;
@@ -2285,10 +2285,6 @@ Dht::processMessage(const uint8_t *buf, size_t buflen, const sockaddr *from, soc
                 DHT_WARN("Unknown search with tid %u !", ttid);
                 n = newNode(msg.id, from, fromlen, 1);
             } else {
-                DHT_DEBUG("[%s %s IPv%c] nodes found: %u IPv4, %u IPv6",
-                    sr ? "search" : "find",
-                    msg.id.toString().c_str(), from->sa_family==AF_INET ? '4' : '6',
-                    msg.nodes4.size()/26, msg.nodes6.size()/38);
                 n = newNode(msg.id, from, fromlen, 2, (sockaddr*)&msg.addr.first, msg.addr.second);
                 for (unsigned i = 0; i < msg.nodes4.size() / 26; i++) {
                     uint8_t *ni = msg.nodes4.data() + i * 26;
@@ -2324,6 +2320,9 @@ Dht::processMessage(const uint8_t *buf, size_t buflen, const sockaddr *from, soc
                     /* Since we received a reply, the number of
                        requests in flight has decreased.  Let's push
                        another request. */
+                   DHT_DEBUG("[search %s IPv%c] found nodes: %u IPv4, %u IPv6",
+                       sr->id.toString().c_str(), sr->af == AF_INET ? '4' : '6',
+                       msg.nodes4.size()/26, msg.nodes6.size()/38);
                     //std::cout << "Received reply from " << id << ", sending new message..." << std::endl;
                     if (searchSendGetValues(*sr))
                         sr->get_step_time = now;
@@ -2332,8 +2331,8 @@ Dht::processMessage(const uint8_t *buf, size_t buflen, const sockaddr *from, soc
             if (sr) {
                 sr->insertNode(n, now, msg.token);
                 if (!msg.values.empty()) {
-                    DHT_DEBUG("[search %s IPv%c] got %u values!",
-                        msg.id.toString().c_str(), sr->af == AF_INET ? '4' : '6',
+                    DHT_DEBUG("[search %s IPv%c] found %u values",
+                        sr->id.toString().c_str(), sr->af == AF_INET ? '4' : '6',
                         msg.values.size());
                     for (auto& cb : sr->callbacks) {
                         if (!cb.get_cb) continue;
@@ -2367,8 +2366,8 @@ Dht::processMessage(const uint8_t *buf, size_t buflen, const sockaddr *from, soc
                 DHT_DEBUG("Unknown search or announce!");
                 newNode(msg.id, from, fromlen, 1);
             } else {
-                DHT_DEBUG("[search %s IPv%c]  got reply to put!",
-                    msg.id.toString().c_str(), sr->af == AF_INET ? '4' : '6',
+                DHT_DEBUG("[search %s IPv%c] got reply to put!",
+                    sr->id.toString().c_str(), sr->af == AF_INET ? '4' : '6',
                     msg.values.size());
 
                 auto n = newNode(msg.id, from, fromlen, 2, (sockaddr*)&msg.addr.first, msg.addr.second);
@@ -2421,30 +2420,30 @@ Dht::processMessage(const uint8_t *buf, size_t buflen, const sockaddr *from, soc
         break;
     case MessageType::FindNode:
         newNode(msg.id, from, fromlen, 1);
-        DHT_DEBUG("[node %s %s] got \"find\"request (%d).", msg.id.toString().c_str(), print_addr(from, fromlen).c_str(), msg.want);
+        DHT_DEBUG("[node %s %s] got 'find' request (%d).", msg.id.toString().c_str(), print_addr(from, fromlen).c_str(), msg.want);
         sendClosestNodes(from, fromlen, msg.tid, msg.target, msg.want);
         break;
     case MessageType::GetValues:
-        DHT_DEBUG("[node %s %s] got \"get\"request for %s.", msg.id.toString().c_str(), print_addr(from, fromlen).c_str(), msg.info_hash);
+        DHT_DEBUG("[node %s %s] got 'get' request for %s.", msg.id.toString().c_str(), print_addr(from, fromlen).c_str(), msg.info_hash.toString().c_str());
         newNode(msg.id, from, fromlen, 1);
         if (msg.info_hash == zeroes) {
-            DHT_WARN("Eek! Got get_values with no info_hash from %s %s.", msg.id.toString().c_str(), print_addr(from, fromlen).c_str());
+            DHT_WARN("[node %s %s] Eek! Got get_values with no info_hash.", msg.id.toString().c_str(), print_addr(from, fromlen).c_str());
             sendError(from, fromlen, msg.tid, 203, "Get_values with no info_hash");
             break;
         } else {
             Storage* st = findStorage(msg.info_hash);
             Blob ntoken = makeToken(from, false);
             if (st && st->values.size() > 0) {
-                 DHT_DEBUG("Sending found%s values.", from->sa_family == AF_INET6 ? " IPv6" : "");
+                 DHT_DEBUG("[node %s %s] sending %u values.", msg.id.toString().c_str(), print_addr(from, fromlen).c_str(), st->values.size());
                  sendClosestNodes(from, fromlen, msg.tid, msg.info_hash, msg.want, ntoken, st->values);
             } else {
-                DHT_DEBUG("Sending nodes for get_values.");
+                DHT_DEBUG("[node %s %s] sending nodes.", msg.id.toString().c_str(), print_addr(from, fromlen).c_str());
                 sendClosestNodes(from, fromlen, msg.tid, msg.info_hash, msg.want, ntoken);
             }
         }
         break;
     case MessageType::AnnounceValue:
-        DHT_DEBUG("[node %s %s] got \"put\"request for %s.",
+        DHT_DEBUG("[node %s %s] got 'put' request for %s.",
             msg.id.toString().c_str(), print_addr(from, fromlen).c_str(),
             msg.info_hash.toString().c_str());
         newNode(msg.id, from, fromlen, 1);
@@ -2454,12 +2453,18 @@ Dht::processMessage(const uint8_t *buf, size_t buflen, const sockaddr *from, soc
             break;
         }
         if (!tokenMatch(msg.token, from)) {
-            DHT_WARN("Incorrect token %s for put.", to_hex(msg.token.data(), msg.token.size()).c_str());
+            DHT_WARN("[node %s %s] incorrect token %s for 'put'.",
+                msg.id.toString().c_str(), print_addr(from, fromlen).c_str(),
+                msg.info_hash.toString().c_str(), to_hex(msg.token.data(), msg.token.size()).c_str());
             sendError(from, fromlen, msg.tid, 401, "Put with wrong token", true);
             break;
         }
         for (const auto& v : msg.values) {
             if (v->id == Value::INVALID_ID) {
+                DHT_WARN("[node %s %s] incorrect value id",
+                    msg.id.toString().c_str(), print_addr(from, fromlen).c_str(),
+                    msg.info_hash.toString().c_str(), to_hex(msg.token.data(), msg.token.size()).c_str());
+
                 DHT_WARN("Incorrect value id ");
                 sendError(from, fromlen, msg.tid, 203, "Put with invalid id");
                 continue;
@@ -2488,19 +2493,20 @@ Dht::processMessage(const uint8_t *buf, size_t buflen, const sockaddr *from, soc
             /* Note that if storageStore failed, we lie to the requestor.
                This is to prevent them from backtracking, and hence
                polluting the DHT. */
-            DHT_DEBUG("Sending put confirmation.");
             sendValueAnnounced(from, fromlen, msg.tid, v->id);
         }
         break;
     case MessageType::Listen:
-        DHT_DEBUG("[node %s %s] got \"listen\" request for %s.", msg.id.toString().c_str(), print_addr(from, fromlen).c_str(), msg.info_hash);
+        DHT_DEBUG("[node %s %s] got 'listen' request for %s.", msg.id.toString().c_str(), print_addr(from, fromlen).c_str(), msg.info_hash.toString().c_str());
         if (msg.info_hash == zeroes) {
             DHT_WARN("Listen with no info_hash.");
             sendError(from, fromlen, msg.tid, 203, "Listen with no info_hash");
             break;
         }
         if (!tokenMatch(msg.token, from)) {
-            DHT_WARN("Incorrect token %s for listen.", to_hex(msg.token.data(), msg.token.size()).c_str());
+            DHT_WARN("[node %s %s] incorrect token %s for 'listen'.",
+                msg.id.toString().c_str(), print_addr(from, fromlen).c_str(),
+                msg.info_hash.toString().c_str(), to_hex(msg.token.data(), msg.token.size()).c_str());
             sendError(from, fromlen, msg.tid, 401, "Listen with wrong token", true);
             break;
         }
@@ -2931,7 +2937,7 @@ Dht::sendClosestNodes(const sockaddr *sa, socklen_t salen, TransId tid,
                 numnodes6 = bufferClosestNodes(nodes6, numnodes6, id, *std::prev(b));
         }
     }
-    DHT_DEBUG("sending closest nodes (%d+%d nodes.)", numnodes, numnodes6);
+    //DHT_DEBUG("sending closest nodes (%d+%d nodes.)", numnodes, numnodes6);
 
     try {
         return sendNodesValues(sa, salen, tid,
